@@ -31,6 +31,8 @@ for size in sample_sizes:
     print(f"Computing powers at a=0.05 for sample size {size}...")
     shap_wilk_FNR = 0
     for j in range(N):
+
+        # The distribution below can be changed as desired
         a = np.random.choice([0.5, 1.0, 1.5])
         b = np.random.choice([0.5, 1.0, 1.5])
         sample = np.random.beta(a=a, b=b, size=size)
