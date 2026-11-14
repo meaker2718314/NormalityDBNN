@@ -15,54 +15,55 @@ input_vectors = []
 
 null_quantile = pd.read_csv("testing_data/nullDistributionQuantiles.csv", index_col='SAMPLE_SIZE')
 
-# Convert to dictionary where keys are the IDs
 null_quantile = null_quantile.squeeze().to_dict(orient='index')
-sample_sizes = sorted(null_quantile.keys())
+critical_value = null_quantile[200]['CRITICAL_ALPHA_05']
 
-for key in sample_sizes:  # Make a simple dictionary instead of a nested dictionary, extract the relevant quantiles
-    null_quantile[key] = null_quantile[key]['CRITICAL_ALPHA_05']
-
-test_type = []
 powers_SW = []
 powers_DBNN = []
+df = []
+kurtosis = []
 N = 5000
 
-for size in sample_sizes:
-    print(f"Computing powers at a=0.05 for sample size {size}...")
-    shap_wilk_FNR = 0
-    for j in range(N):
+for k in range(1, 21):
+    print(f"Computing powers at a=0.05 for {k} degree(s) of freedom...")
 
-        # The distribution below can be changed as desired
-        a = np.random.choice([0.5, 1.0, 1.5])
-        b = np.random.choice([0.5, 1.0, 1.5])
-        sample = np.random.beta(a=a, b=b, size=size)
+    shap_wilk_FNR = 0
+    average_kurtosis = 0
+
+    for j in range(N):
+        sample = np.random.standard_t(df=k, size=200)
 
         standardized_sample = (sample - np.mean(sample)) / np.std(sample)
-
+        average_kurtosis += stats.kurtosis(standardized_sample)
         # Build the input vector
         quantiles = [np.quantile(standardized_sample, q=k/20) for k in range(1, 20)]
         minimum = np.min(standardized_sample)
         maximum = np.max(standardized_sample)
 
-        input_vector = quantiles + [minimum] + [maximum] + [size]
+        input_vector = quantiles + [minimum] + [maximum] + [200]
         input_vectors.append(input_vector)
         stat, p_val = stats.shapiro(standardized_sample)
         shap_wilk_FNR += int(p_val > 0.05)
 
+    average_kurtosis /= N
     with torch.no_grad():
         x = torch.tensor(input_vectors, dtype=torch.float32)
         logit = model(x)
         p = torch.sigmoid(logit)
 
-    p = torch.flatten(p).numpy()
-    DBNN_FNR = np.sum(p > null_quantile[size]) / p.size
-    powers_DBNN.append(np.round(1 - DBNN_FNR, 4))
-    powers_SW.append(round(1 - shap_wilk_FNR / N, 4))
+        p = torch.flatten(p).numpy()
+        DBNN_FNR = np.sum(p > critical_value) / p.size
+        powers_DBNN.append(np.round(1 - DBNN_FNR, 4))
+        powers_SW.append(round(1 - shap_wilk_FNR / N, 4))
+        df.append(k)
+        kurtosis.append(average_kurtosis)
+
 
 df = pd.DataFrame({
-    "SAMPLE_SIZE": sample_sizes,
+    "DF": df,
+    "KURTOSIS": kurtosis,
     "POWER_DBNN": powers_DBNN,
     "POWER_SW": powers_SW
 })
 
-df.to_csv("DBNN_vs_SW_beta.csv", index=False)
+df.to_csv("DBNN_vs_SW_t_varied.csv", index=False)
